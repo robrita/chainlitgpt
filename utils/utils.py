@@ -153,6 +153,62 @@ def get_llm_models() -> list:
             return llm_config
 
 
+# Convert file to markdown format
+def file2markdown(file_path: str) -> str:
+    """
+    Convert a file to markdown format using MarkItDown.
+    
+    Args:
+        file_path: Path to the file to be converted
+        
+    Returns:
+        str: Markdown formatted content of the file
+    """
+    try:
+        md_result = md.convert(file_path)
+        return md_result.text_content
+    except Exception as e:
+        logger.error(f"Failed to convert file {file_path} to markdown: {e}")
+        return ""
+
+
+# Extract URLs from text
+def extract_urls(text: str) -> list[str]:
+    """
+    Extract all URLs from the given text.
+    
+    Args:
+        text: The input text to extract URLs from.
+        
+    Returns:
+        list[str]: A list of extracted URLs.
+    """
+    urls = []
+    for word in text.split():
+        if word.startswith("https://"):
+            # Remove trailing period if it's at the end of a sentence
+            cleaned = word.rstrip(".")
+            urls.append(cleaned)
+    return urls
+
+
+# Append URLs to markdown content
+def get_url_content(text: str) -> list[str]:
+    """
+    Extract URLs from the text and convert their content to markdown format.
+
+    Args:
+        text: The input text containing URLs.
+
+    Returns:
+        list[dict]: A list of dictionaries containing the URL and its markdown content.
+    """
+    file_contents = []
+    for url in extract_urls(text):
+        file_contents.append(f"<file_name:{url}>{file2markdown(url)}</file_name:{url}>")
+    return file_contents
+
+
 # Append openai chat completion message
 def append_message(role: str, content: str, elements: list = []) -> list:
     """
@@ -184,6 +240,10 @@ def append_message(role: str, content: str, elements: list = []) -> list:
 
     # Check if the role is assistant and add the images to the message
     if role == "user":
+        # Check for https:// links in the content
+        if "https://" in content:
+            file_contents.extend(get_url_content(content))
+
         for element in elements:
             logger.info(f"Uploaded file: {element}")
             # is_foundry = cl.user_session.get("chat_settings").get("model_provider") == "foundry"
@@ -197,8 +257,8 @@ def append_message(role: str, content: str, elements: list = []) -> list:
 
             # Convert the file to markdown format
             else:
-                md_result = md.convert(element.path)
-                file_contents.append(f"<file_name:{element.name}>{md_result.text_content}</file_name:{element.name}>")
+                md_result = file2markdown(element.path)
+                file_contents.append(f"<file_name:{element.name}>{md_result}</file_name:{element.name}>")
 
             file_uploads.append({
                 "name": element.name,
@@ -212,8 +272,8 @@ def append_message(role: str, content: str, elements: list = []) -> list:
     cl.user_session.set("file_contents", file_contents)
 
     # Check if there are any uploaded files and add them to the message
-    if len(file_contents) > 0:
-        contents.append({"type": "text", "text": "\n\n".join(file_contents)})
+    for file_content in file_contents:
+        contents.append({"type": "text", "text": file_content})
 
     logger.info(f"[{role}]: {contents}")
     # Add message to history
